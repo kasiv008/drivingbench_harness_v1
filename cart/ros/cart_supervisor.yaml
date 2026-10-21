@@ -1,0 +1,65 @@
+# cart_supervisor parameters. Values marked CALIBRATE must be measured on your cart.
+
+mode: llm                 # llm | calib
+calib_throttle: 0.0       # calib mode only: fixed throttle while the deadman is held
+
+# Controller (check with jstest; buttons 2, 5, 8, 9 are unused by joystick_demo)
+deadman_button: 2
+throttle_axis: 4
+brake_axis: 5
+steer_axis: 2
+trigger_deadband: 0.05
+stick_override: 0.2
+
+# Freshness limits [s]
+joy_timeout: 0.25         # needs joy_node autorepeat_rate >= 20
+joy_cmd_timeout: 0.25
+report_timeout: 0.3
+target_timeout: 0.2
+
+# Brake band of this cart
+brake_min: 0.5
+brake_cap: 1.1
+hold_brake: 0.8           # CALIBRATE: holds the cart on your steepest slope
+stop_brake: 0.8           # CALIBRATE: stopping from max LLM speed feels acceptable
+kb: 0.5
+
+# Speed loop
+throttle_cap: 0.5         # LLM mode never exceeds this, independent of the joystick's 1.0
+throttle_slew: 0.5        # throttle units per second
+kp: 0.15
+ki: 0.05
+i_max: 2.0
+brake_band: 0.3           # m/s over target before the loop brakes
+ff_speeds: [0.5, 1.0, 2.0, 3.0]      # CALIBRATE with mode: calib
+ff_throttle: [0.0, 0.0, 0.0, 0.0]    # CALIBRATE: steady-state throttle for each speed
+max_speed_mps: 3.0        # hard brake above this while the LLM has (or just had) authority
+standstill_speed: 0.05
+
+# Steering (radians of steering-wheel angle, same as joystick_demo)
+steer_sign: 1.0           # +1: positive command turns left (matches your flipped joystick)
+max_steer_rad: 9.85       # CALIBRATE: must be >= radians(max_steering_angle_deg); live setting is 564 deg = 9.84 rad
+steer_vel_llm: 3.0        # rad/s; 1.5 left most of a 5 s command spent ramping
+
+# PACMod reports. Check names and types with: rostopic list | grep pacmod ; rostopic type <topic>
+speed_topic: /pacmod/parsed_tx/vehicle_speed_rpt
+speed_type: pacmod_msgs/VehicleSpeedRpt
+speed_field: vehicle_speed          # e.g. data for std_msgs/Float64, twist.twist.linear.x for Odometry
+steer_rpt_topic: /pacmod/parsed_tx/steer_rpt
+steer_rpt_type: pacmod_msgs/SystemRptFloat
+accel_rpt_topic: /pacmod/parsed_tx/accel_rpt
+accel_rpt_type: pacmod_msgs/SystemRptFloat
+brake_rpt_topic: /pacmod/parsed_tx/brake_rpt
+brake_rpt_type: pacmod_msgs/SystemRptFloat
+shift_rpt_topic: /pacmod/parsed_tx/shift_rpt
+shift_rpt_type: pacmod_msgs/SystemRptInt
+gear_forward_value: 3     # CALIBRATE: shift report output when in forward
+use_enabled_topic: true   # false: derive "enabled" from the steer/accel/brake reports
+enabled_topic: /pacmod/as_tx/enable
+
+# Topic namespaces and UDP link to cart_bridge.py
+joy_cmd_ns: /joy_cmd
+out_ns: /pacmod/as_rx
+bridge_port: 47801
+target_port: 47802
+ignore: false

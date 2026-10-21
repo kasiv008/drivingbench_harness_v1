@@ -1,0 +1,6 @@
+{
+  "max_steering_angle_deg": 300,
+  "speed_limit_mps": 1.5,
+  "road_camera_mode": "narrow_only",
+  "objective": "Follow the cone-marked course and stop at the final cone pair."
+}

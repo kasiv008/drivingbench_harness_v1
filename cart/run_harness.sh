@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Start the harness side on the cart PC: bridge, producer, gateway. Ctrl+C stops all three.
+# ROS side (separately): roslaunch joystick_demo llm_drive.launch
+# Usage: cart/run_harness.sh [camera]   camera: /dev/video0 (default), an index, or "test"
+set -euo pipefail
+cd "$(dirname "$0")/.."
+CAMERA="${1:-/dev/video0}"
+
+uv run python cart/cart_bridge.py &
+BRIDGE=$!
+sleep 1
+uv run python cart/producer.py --camera "$CAMERA" &
+PRODUCER=$!
+sleep 2
+uv run python cart/gateway.py &
+GATEWAY=$!
+
+trap 'kill $GATEWAY $PRODUCER $BRIDGE 2>/dev/null; wait' INT TERM EXIT
+echo "UI: http://127.0.0.1:8766  (from a laptop: ssh -L 8766:127.0.0.1:8766 <cart-pc>)"
+wait -n
+echo "a harness process exited; stopping the rest"

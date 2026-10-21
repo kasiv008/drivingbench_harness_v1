@@ -1,0 +1,31 @@
+<launch>
+  <!-- Copy cart_supervisor.py into joystick_demo/scripts (chmod +x) and
+       cart_supervisor.yaml into joystick_demo/config. Adjust pkg if yours differs. -->
+
+  <node pkg="joy" type="joy_node" name="joy_node">
+    <param name="dev" value="/dev/input/js0"/>
+    <param name="deadzone" value="0.0"/>
+    <param name="autorepeat_rate" value="20.0"/>
+  </node>
+
+  <!-- Unchanged joystick node. Its outputs now land in /joy_cmd/* and only reach PACMod
+       through cart_supervisor. Nothing else may publish to /pacmod/as_rx/*. -->
+  <group ns="joy_cmd">
+    <node pkg="joystick_demo" type="joystick_demo" name="joystick_demo" output="screen">
+      <param name="brake_min" value="0.5"/>
+      <param name="brake_max" value="1.1"/>
+      <param name="brake_deadband" value="0.05"/>
+      <param name="throttle_min" value="0.0"/>
+      <param name="throttle_max" value="1.0"/>
+      <param name="throttle_deadband" value="0.05"/>
+      <param name="joy_timeout" value="0.25"/>
+      <param name="timeout_brake" value="1.1"/>
+      <param name="ignore" value="false"/>
+      <param name="count" value="false"/>
+    </node>
+  </group>
+
+  <node pkg="joystick_demo" type="cart_supervisor.py" name="cart_supervisor" output="screen">
+    <rosparam command="load" file="$(find joystick_demo)/config/cart_supervisor.yaml"/>
+  </node>
+</launch>
