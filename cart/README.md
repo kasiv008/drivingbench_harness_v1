@@ -13,12 +13,12 @@ producer, :8876                             cart/producer.py     (device/service
    │ Unix socket RPC
 cart_bridge, 50 Hz                          cart/cart_bridge.py  (controller/core.py)
    │ UDP 47801/47802, localhost
-cart_supervisor (ROS), 33 Hz                cart/ros/cart_supervisor.py
+cart_supervisor (ROS 2), 33 Hz               cart/ros/cart_supervisor.py
    │ mux: joystick or LLM, speed loop, deadman
 /pacmod/as_rx/*  →  PACMod  →  cart
 ```
 
-The harness side needs Python 3.12 (uv). The supervisor runs in your ROS Python (2.7 or 3).
+The harness side needs Python 3.12 (uv). The supervisor runs in the ROS 2 Jazzy system Python.
 They only talk over localhost UDP.
 
 ## Safety model
@@ -40,21 +40,21 @@ These are software checks. Keep a person in the seat with the physical brake and
 
 ## Install
 
-### ROS side (cart PC)
+### ROS side (cart PC, ROS 2 Jazzy)
+
+`~/compile_ws` is self-contained: `golfcart_joystick_demo` plus `src/drivers/pacmod2` (ROS 2
+port, SocketCAN) and `pacmod_msgs`. `cart/ros/` holds copies of the supervisor, parameters and
+launch file; keep them identical.
 
 ```bash
-PKG=~/compile_ws/src/joystick_demo        # your joystick_demo package
-cp cart/ros/cart_supervisor.py $PKG/scripts/ && chmod +x $PKG/scripts/cart_supervisor.py
-mkdir -p $PKG/config && cp cart/ros/cart_supervisor.yaml $PKG/config/
-cp cart/ros/llm_drive.launch $PKG/launch/
-cd ~/compile_ws && catkin_make && source devel/setup.bash
+source /opt/ros/jazzy/setup.bash
+cd ~/compile_ws && colcon build --symlink-install && source install/setup.bash
 ```
 
-On Melodic (Python 2), change the first line of `cart_supervisor.py` to `#!/usr/bin/env python`.
-
-`llm_drive.launch` starts joy_node, your unchanged joystick_demo in the `/joy_cmd` namespace,
-and the supervisor. **Use it instead of joystick_demo.launch.** Nothing else may publish to
-`/pacmod/as_rx/*`.
+`llm_drive.launch.xml` starts PACMod (SocketCAN on `can0`), joy_node, the unchanged joystick_demo
+in the `/joy_cmd` namespace, and the supervisor. **Use it instead of demo.launch.xml.** Nothing
+else may publish to `/pacmod/as_rx/*`: if PACMod already runs (for example from
+`cart_hardware sensors.launch.py`), pass `launch_pacmod:=false`.
 
 ### Harness side (cart PC)
 
@@ -63,32 +63,37 @@ cd drivingbench_harness_v1          # repo root, with this cart/ folder inside
 uv sync --locked
 uv pip install opencv-python-headless numpy
 uv run python cart/tests/smoke_e2e.py        # should end with ALL PASSED
-uv run pytest -q cart/tests                  # supervisor logic
+PYTHONPATH= uv run pytest -q cart/tests      # supervisor logic (keep ROS 2 off the path)
 ```
 
 ## Configure
 
-1. **Topics.** Check `rostopic list | grep pacmod` and `rostopic type <topic>`. Set the report
+1. **Topics.** Check `ros2 topic list | grep pacmod` and `ros2 topic type <topic>`. Set the report
    topics and types in `cart_supervisor.yaml`. If the cart has no speed report, point
    `speed_topic` at another source (for Odometry use `speed_type: nav_msgs/Odometry` and
    `speed_field: twist.twist.linear.x`). The supervisor warns about missing publishers 3 s
    after start.
-2. **Gear.** Shift to forward with the joystick, run `rostopic echo` on the shift report, and
+2. **Gear.** Shift to forward with the joystick, run `ros2 topic echo` on the shift report, and
    set `gear_forward_value` to its `output`.
-3. **Deadman.** Pick a free button with `jstest /dev/input/js0`. Set `deadman_button`.
+3. **Controller.** Button and axis indices live in `controller.yaml`, shared by joystick_demo and
+   the supervisor. They depend on the controller's mode: check with `ros2 topic echo /joy`.
+   Pick a free button for `deadman_button`. joystick_demo rejects joy messages with fewer axes
+   or buttons than the mapping uses ("Check controller mode") and holds the brake.
 4. **Steering scale.** Find the steering-wheel angle you want at 100% (the usable lock).
    Set `max_steering_angle_deg` in `cart_settings.json` (or in the UI). Set `max_steer_rad`
    in the yaml at or above that value in radians. The settings file only seeds the first
    start. After that the UI owns settings (`~/drivingbench-cart/state/settings.json`).
-5. **Camera.** `v4l2-ctl --list-formats-ext` shows supported modes. MJPG at 1920x1080 is the
+5. **Camera.** The harness opens the forward camera itself, `/dev/cam_front` by default (udev
+   names from `cart_ws` 99-cart-cameras.rules; another camera: `cart/run_harness.sh /dev/...`). A camera can have only one reader, so do not
+   run `usb_cam` on it at the same time. `v4l2-ctl --list-formats-ext` shows supported modes. MJPG at 1920x1080 is the
    default. The model sees a 1280 px wide JPEG at up to 5 Hz.
 
 ## Bring-up ladder
 
 Pass each stage before the next. Wheels lifted for 1 to 3.
 
-1. **Supervisor only.** `roslaunch joystick_demo llm_drive.launch` with the harness stopped.
-   Drive with the joystick as before. Hold the deadman: `rostopic echo
+1. **Supervisor only.** `ros2 launch golfcart_joystick_demo llm_drive.launch.xml` with the
+   harness stopped. Drive with the joystick as before. Hold the deadman: `ros2 topic echo
    /cart_supervisor/status` shows `source: llm, reason: bridge_stale` and the brake holds.
    Release: brake holds (`handover`) until you touch a trigger.
 2. **Feedforward.** Set `mode: calib` and `calib_throttle` to 0.2, 0.3, ... For each, hold the
@@ -105,7 +110,7 @@ Pass each stage before the next. Wheels lifted for 1 to 3.
 4. **On the ground, by hand.** Same commands at 0.5 to 1.0 m/s. Tune `kp`, `ki`, `stop_brake`.
 5. **Model.** Connect the MCP client and let it drive a cone course at `speed_limit_mps` ≤ 1.5.
 
-Record everything: `rosbag record /pacmod /joy /joy_cmd /cart_supervisor/status`. The harness
+Record everything: `ros2 bag record -e '/pacmod/.*|/joy.*|/cart_supervisor/status'`. The harness
 also writes its own traces under `~/drivingbench-cart/state/recordings`.
 
 ## Connect a model
@@ -124,9 +129,10 @@ calls works the same way.
 
 | File | Role |
 |---|---|
-| `ros/cart_supervisor.py` | Mux, deadman, speed loop, emergency brake, UDP state link (ROS) |
+| `ros/cart_supervisor.py` | Mux, deadman, speed loop, emergency brake, UDP state link (ROS 2) |
 | `ros/cart_supervisor.yaml` | All supervisor parameters (CALIBRATE marks) |
-| `ros/llm_drive.launch` | joy_node + joystick_demo in `/joy_cmd` + supervisor |
+| `ros/controller.yaml` | Joystick button and axis indices (joystick_demo and supervisor) |
+| `ros/llm_drive.launch.xml` | PACMod + joy_node + joystick_demo in `/joy_cmd` + supervisor |
 | `cart_bridge.py` | Harness Controller and native socket, replaces `device/native.py` |
 | `usb_camera.py` | USB camera with the producer's camera interface; `test` = synthetic |
 | `producer.py` | Starts `device/service.py` with the USB camera |

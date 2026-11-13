@@ -383,3 +383,16 @@ def test_stop_ignores_stale_command_epoch():
         0.2,
     )
     assert reply["status"] == "accepted" and c.command is None
+
+
+def test_steer_in_place_is_zero_speed_and_opt_in():
+    with pytest.raises(ValueError):
+        Motion(direction="left", steering_percent=50, speed_mps=0.3, duration_s=5)
+    c = ready()
+    assert motion(c, speed=0)["reason"] == "steer_in_place_unsupported"
+    assert c.command is None
+    c.allow_steer_in_place = True
+    assert motion(c, speed=0, percent=100, identifier="steer")["status"] == "accepted"
+    assert c.command["speed_mps"] == 0 and c.command["target_angle_deg"] == 180
+    selection = c.step(0.01)
+    assert selection.angle_deg == 180 and selection.acceleration_mps2 == 0.0

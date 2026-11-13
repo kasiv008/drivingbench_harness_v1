@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PROTOCOL = 2
 SERVER_NAME = "drivingbench_sandbox"
@@ -13,9 +13,15 @@ REASON_MAX_CHARS = 200
 # Below ~0.5 m/s the Corolla's launch never rolls; a command shorter than an
 # observe round trip would brake before the model could see anything.
 SPEED_RANGE_MPS = (0.5, 3.5)
-DURATION_RANGE_S = (5.0, 60.0)
+DURATION_RANGE_S = (3.0, 60.0)
 TYPICAL_SPEED_MPS = 1.0
 TYPICAL_DURATION_S = 10.0
+# The model picks its own duration inside the range; this tells it how.
+DURATION_GUIDANCE = (
+    "Scale duration to your confidence: use the shortest durations when close to an obstacle, "
+    "near the stopping point or unsure of the scene, and longer ones only when the path ahead "
+    "is clearly open. "
+)
 # Fixed native emergency stop, well above any commandable speed plus launch overshoot.
 # Never the editable ceiling, so lowering the ceiling cannot make overshoot an emergency.
 EMERGENCY_SPEED_MPS = 6.0
@@ -28,9 +34,17 @@ class Model(BaseModel):
 class Motion(Model):
     direction: Literal["left", "right", "straight"]
     steering_percent: float = Field(ge=0, le=100)
-    speed_mps: float = Field(ge=SPEED_RANGE_MPS[0], le=SPEED_RANGE_MPS[1])
+    # 0 means steer in place: the owner holds the brake and only turns the wheels.
+    speed_mps: float = Field(ge=0, le=SPEED_RANGE_MPS[1])
     duration_s: float = Field(ge=DURATION_RANGE_S[0], le=DURATION_RANGE_S[1])
     reason: str = Field(default="", max_length=REASON_MAX_CHARS)  # evidence only; never executed
+
+    @field_validator("speed_mps")
+    @classmethod
+    def _speed_is_zero_or_in_range(cls, value):
+        if value != 0 and value < SPEED_RANGE_MPS[0]:
+            raise ValueError("speed_mps must be 0 or within the speed range")
+        return value
 
 
 class ImageSettings(Model):
@@ -95,6 +109,7 @@ INSTRUCTIONS = (
     "speeds above the operator's shared ceiling are rejected. "
     f"Duration is {DURATION_RANGE_S[0]:g}–{DURATION_RANGE_S[1]:g} s; aim for about "
     f"{TYPICAL_DURATION_S:g} s and adjust to the latency you measure from the timestamps. "
+    f"{DURATION_GUIDANCE}"
     "Direction is left, right or straight. Percent is 0–100 of the operator's shared "
     "wheel-angle setting; zero means straight. State in reason, in about thirty words, "
     "what the command is for; it is recorded for the operator and never affects the car. "

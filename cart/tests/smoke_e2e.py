@@ -151,7 +151,8 @@ def main():
         fake.state.update(authorized=False, auth_reason="deadman_released",
                           lateral_active=False, longitudinal_active=False)
         wait_for(lambda: fake.target and not fake.target["active"], 2, "cancel on deadman")
-        s = status()
+        # The bridge cancels first; the producer's status follows on its next poll.
+        s = wait_for(lambda: (s := status())["reason"] != "starting" and s, 1, "status update")
         check(s["reason"] == "supervisor_not_engaged", f"deadman release cancels: {s['reason']}")
         fake.state.update(authorized=True, auth_reason="authorized", lateral_active=True,
                           longitudinal_active=True)

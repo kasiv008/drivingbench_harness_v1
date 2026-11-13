@@ -220,3 +220,24 @@ async def test_slow_observation_does_not_delay_stop():
         assert result_text(stopped)["status"] == "stopping"
         release.set()
         await pending
+
+
+async def test_steer_in_place_is_an_opt_in_zero_speed_motion(monkeypatch):
+    from drivingbench.mcp import tools as tools_module
+
+    requests = []
+
+    def handle(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"status": "accepted"})
+
+    monkeypatch.setattr(tools_module, "STEER_IN_PLACE", True)
+    async with httpx.AsyncClient(
+        base_url="http://127.0.0.1", transport=httpx.MockTransport(handle)
+    ) as client:
+        server = make_server(client)
+        names = {tool.name for tool in await server.list_tools()}
+        assert names == {"observe", "set_motion", "stop_now", "steer_in_place"}
+        await server.call_tool("steer_in_place", {"direction": "left", "steering_percent": 100})
+    assert requests[0]["speed_mps"] == 0 and requests[0]["steering_percent"] == 100
+    assert requests[0]["duration_s"] >= DURATION_RANGE_S[0]

@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<!-- PACMod + joystick + cart_supervisor: the ROS side of the DrivingBench harness.
+     The joystick always works; the harness drives only while the deadman button is held.
+     Nothing else may publish to /pacmod/as_rx/*. Set launch_pacmod:=false if PACMod is
+     already running (for example from cart_hardware sensors.launch.py). -->
+<launch>
+  <arg name="launch_pacmod" default="true"/>
+  <arg name="pacmod_vehicle_type" default="POLARIS_GEM"/>
+  <arg name="can_device" default="can0"/>
+  <arg name="joy_device_id" default="0"/>
+
+  <include file="$(find-pkg-share pacmod2)/launch/pacmod2.launch.xml" if="$(var launch_pacmod)">
+    <arg name="use_socketcan" value="true"/>
+    <arg name="socketcan_device" value="$(var can_device)"/>
+    <arg name="pacmod_vehicle_type" value="$(var pacmod_vehicle_type)"/>
+  </include>
+
+  <node pkg="joy" exec="joy_node" name="joy_node">
+    <param name="device_id" value="$(var joy_device_id)"/>
+    <param name="deadzone" value="0.0"/>
+    <param name="autorepeat_rate" value="20.0"/>
+  </node>
+
+  <!-- Unchanged joystick node. Its outputs land in /joy_cmd/* and only reach PACMod
+       through cart_supervisor. -->
+  <group>
+    <push-ros-namespace namespace="joy_cmd"/>
+    <node pkg="golfcart_joystick_demo" exec="joystick_demo" name="joystick_demo" output="screen">
+      <param from="$(find-pkg-share golfcart_joystick_demo)/config/controller.yaml"/>
+      <param name="brake_min" value="0.5"/>
+      <param name="brake_max" value="1.1"/>
+      <param name="brake_deadband" value="0.05"/>
+      <param name="throttle_min" value="0.0"/>
+      <param name="throttle_max" value="1.0"/>
+      <param name="throttle_deadband" value="0.05"/>
+      <param name="joy_timeout" value="0.25"/>
+      <param name="timeout_brake" value="1.1"/>
+      <param name="ignore" value="false"/>
+      <param name="count" value="false"/>
+    </node>
+  </group>
+
+  <node pkg="golfcart_joystick_demo" exec="cart_supervisor.py" name="cart_supervisor" output="screen">
+    <param from="$(find-pkg-share golfcart_joystick_demo)/config/controller.yaml"/>
+    <param from="$(find-pkg-share golfcart_joystick_demo)/config/cart_supervisor.yaml"/>
+  </node>
+</launch>

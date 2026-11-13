@@ -92,7 +92,7 @@ set_motion(
     direction="left",         # "left" | "right" | "straight"
     steering_percent=50,      # 0–100 of the shared steering scale; 0 is straight
     speed_mps=1.0,            # 0.5–3.5 m/s; rejected above the operator's speed ceiling
-    duration_s=10,            # 5–60 s; the command expires and the car brakes
+    duration_s=10,            # 3–60 s; the command expires and the car brakes
     reason="Cone gap opens to the left; ease in.",  # optional, recorded, never executed
 )
 
@@ -114,7 +114,7 @@ and in the trace and never reaches the controller.
   the command and rejects new ones until the car is ready again; nothing resumes on its own.
 - Speed above the operator's shared ceiling (0.5–3.5 m/s, default 3) is rejected. Measured
   speed above the fixed 6 m/s emergency limit cancels motion and refuses commands.
-- Commands expire after their duration (5–60 s); the model must keep observing and issuing.
+- Commands expire after their duration (3–60 s); the model must keep observing and issuing.
 - Steering goes through openpilot's lateral jerk and acceleration limiter and the car's
   torque and rate limits; the harness raises openpilot's lateral-acceleration cap for
   parking-lot turning and lets the configured wheel-angle range replace the generic

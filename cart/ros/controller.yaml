@@ -1,0 +1,27 @@
+# Joystick button and axis indices, shared by joystick_demo and cart_supervisor.
+# They depend on the controller's mode. Check with: ros2 topic echo /joy
+# Triggers: 1.0 released, -1.0 fully pressed. Sticks: +1.0 is left/up.
+#
+# A button index of -1 means "not mapped".
+#
+# Values below: 8BitDo Ultimate 2 on its 2.4 GHz dongle (X-input), checked with jstest
+# 2026-11-10. 8 axes, 11 buttons: 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 Back, 7 Start, 8 Home,
+# 9 L3, 10 R3; axes 0/1 left stick, 2 LT, 3/4 right stick, 5 RT, 6/7 d-pad.
+# Over Bluetooth (the old PC) it used a different layout: deadman 2, drive 0, reverse 1,
+# park 3, neutral 4, disable 6, enable 7, steering multiplier 10/11, throttle axis 4,
+# brake axis 5, steering axis 2, turn signal axis 0.
+/**:
+  ros__parameters:
+    deadman_button: 2      # X: held to let the harness drive (cart_supervisor only)
+    btn_drive: 0           # A
+    btn_neutral: 1         # B
+    btn_reverse: 3         # Y
+    btn_park: -1           # not mapped
+    btn_disable: 4         # LB
+    btn_enable: 5          # RB
+    btn_steer_mult_1: 9    # L3 / R3 (stick clicks): either one held = full steering range
+    btn_steer_mult_2: 10
+    throttle_axis: 5       # RT
+    brake_axis: 2          # LT
+    steer_axis: 3          # right stick, left/right
+    turn_signal_axis: 0    # left stick, left/right

@@ -135,9 +135,15 @@ def test_dead_joystick_node_holds_brake():
 
 def test_overspeed_brakes_hard_in_llm_mode():
     sup = ready()
-    reports(sup, 10.0, speed=3.5)
-    sup.on_target({"active": True, "speed_mps": 1.0, "angle_deg": 0.0}, 10.0)
-    out = sup.tick(10.0)
+    # Speed is low-pass filtered (speed_tau 0.25 s): a sustained overspeed trips within 0.6 s.
+    now = 10.0
+    while now < 10.6:
+        now += 0.03
+        joy(sup, now)
+        joy_cmd(sup, now)
+        reports(sup, now, speed=3.5)
+        sup.on_target({"active": True, "speed_mps": 1.0, "angle_deg": 0.0}, now)
+    out = sup.tick(now)
     assert out["source"] == "emergency" and out["brake"] == 1.1 and out["throttle"] == 0.0
 
 
@@ -176,3 +182,84 @@ def test_calib_mode_ramps_to_fixed_throttle():
         reports(sup, now)
         out = sup.tick(now)
     assert out["source"] == "calib" and math.isclose(out["throttle"], 0.3)
+
+
+# Grade trim. A crude cart: throttle above the sustain level accelerates, plus a slope term.
+TRIM = {"ff_speeds": [0.5, 1.5], "ff_throttle": [0.325, 0.45], "throttle_start": 0.30,
+        "throttle_cap": 0.7, "kp": 0.12, "ki": 0.03, "i_max": 1.0, "breakaway_throttle": 0.36,
+        "kp_over": 0.3, "trim_gain": 0.15}
+
+
+def drive(params, slope_accel, v_ref=0.5, seconds=12.0, loop=None):
+    p = dict(Supervisor(params).p)
+    loop = loop or SpeedLoop(p)
+    v, dt, speeds = 0.0, 0.03, []
+    for _ in range(int(seconds / dt)):
+        throttle, brake = loop.step(v_ref, v, dt)
+        assert not (throttle > 0.0 and brake > 0.0)
+        push = 4.6 * (throttle - 0.325) if throttle >= 0.30 else -0.3
+        if v <= 0.0 and throttle < 0.35 + max(0.0, -slope_accel) / 4.6:
+            push = 0.0  # static friction (and gravity uphill) holds it
+        v = max(0.0, v + (push + slope_accel - 3.0 * brake) * dt)
+        speeds.append(v)
+    return loop, speeds
+
+
+def test_trim_is_off_by_default():
+    loop, _ = drive({k: v for k, v in TRIM.items() if k not in ("trim_gain", "kp_over")}, 0.3)
+    assert loop.trim == 0.0
+
+
+def test_trim_learns_less_throttle_downhill():
+    old = dict(TRIM, trim_gain=0.0, kp_over=0.0)
+    _, before = drive(old, 0.6)  # steep enough to roll with no throttle at all
+    loop, after = drive(dict(TRIM, brake_band_downhill=0.15), 0.6)
+    assert loop.trim == -loop.p["trim_max"]
+    assert max(before[-100:]) > 0.75  # old loop sits at the edge of the 0.3 brake band
+    assert max(after[-100:]) < 0.7
+
+
+def test_trim_learns_more_throttle_uphill_and_gets_moving():
+    old = dict(TRIM, trim_gain=0.0, kp_over=0.0)
+    _, before = drive(old, -0.3)
+    loop, after = drive(TRIM, -0.3)
+    assert before[-1] == 0.0  # the flat-ground breakaway throttle never moves it
+    assert 0.0 < loop.trim <= loop.p["trim_max"]
+    assert after[-1] > 0.3
+
+
+def test_trim_stays_bounded_and_survives_a_stop():
+    loop, _ = drive(TRIM, -2.0)  # far steeper than the trim can handle
+    assert loop.trim == loop.p["trim_max"]
+    loop.reset()
+    assert loop.trim == loop.p["trim_max"]
+    loop.step(0.5, 1.5, 0.03)  # clearly too fast: uphill bias dropped at once
+    assert loop.trim == 0.0
+
+
+def test_trim_does_not_wind_up_during_a_normal_launch():
+    loop = SpeedLoop(dict(Supervisor(TRIM).p))
+    for _ in range(int(1.4 / 0.03)):  # the launch delay seen on the cart
+        loop.step(0.5, 0.0, 0.03)
+    assert loop.trim == 0.0
+
+
+def test_log_row_has_every_field_and_reflects_the_tick():
+    sup = ready({"trim_gain": 0.15})
+    now = 10.0
+    sup.on_target({"active": True, "speed_mps": 0.6, "angle_deg": 90.0, "epoch": 3}, now)
+    out = sup.tick(now)
+    row = sup.log_row(now, out, wall_time=123.0)
+    assert tuple(row) == Supervisor.LOG_FIELDS
+    assert row["source"] == "llm" and row["reason"] == "executing"
+    assert row["target_active"] is True and row["target_speed_mps"] == 0.6
+    assert row["target_epoch"] == 3 and row["target_age_s"] == 0.0
+    assert row["throttle_cmd"] == out["throttle"] and row["brake_cmd"] == 0.0
+    assert abs(row["steer_cmd_deg"] - 90.0) < 1e-9
+    assert row["speed_mps"] == 0.0 and row["deadman"] is True and row["dt"] is None
+    assert sup.log_row(now + 0.03, sup.tick(now + 0.03))["dt"] > 0
+
+    idle = Supervisor()
+    row = idle.log_row(0.0, idle.tick(0.0))  # nothing received yet: still loggable
+    assert row["target_active"] is None and row["speed_mps"] is None
+    assert row["steer_cmd_deg"] is None or isinstance(row["steer_cmd_deg"], float)

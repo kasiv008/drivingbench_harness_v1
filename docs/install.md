@@ -76,7 +76,7 @@ reaches models only after an operator clicks **Create prompt from saved settings
 and saves.
 
 Command limits live in `shared/contracts.py` and are enforced in the MCP schema
-and again in the controller: speed 0.5–3.5 m/s (typically 1), duration 5–60 s
+and again in the controller: speed 0.5–3.5 m/s (typically 1), duration 3–60 s
 (aim for ~10). Below 0.5 m/s a Toyota's launch does not roll; a command shorter
 than an observe round trip would brake before the model saw anything. The one
 editable speed number is the **speed ceiling** (`speed_limit_mps`, within 0.5–3.5,

@@ -11,6 +11,7 @@ from uuid import uuid4
 import httpx
 from drivingbench.mcp.icons import icon
 from drivingbench.shared.contracts import (
+    DURATION_GUIDANCE,
     DURATION_RANGE_S,
     INSTRUCTIONS,
     REASON_MAX_CHARS,
@@ -29,6 +30,10 @@ Duration = Annotated[
     float, Field(ge=DURATION_RANGE_S[0], le=DURATION_RANGE_S[1], allow_inf_nan=False)
 ]
 Reason = Annotated[str, Field(max_length=REASON_MAX_CHARS)]
+
+# Set by a vehicle-specific entry point whose command owner supports zero-speed commands.
+STEER_IN_PLACE = False
+STEER_IN_PLACE_S = 4.0
 
 
 def text(value):
@@ -112,6 +117,31 @@ def make_server(client: httpx.AsyncClient, label="MCP"):
         )
         return [text({key: result[key] for key in ("status", "error") if key in result})]
 
+    async def steer_in_place(
+        direction: Literal["left", "right", "straight"],
+        steering_percent: Percent,
+        reason: Reason = "",
+    ) -> list:
+        """Turn the wheels without moving: the brake stays held. Use before a tight turn.
+
+        Same direction and percent as set_motion. Takes a few seconds; observe steering_percent
+        to see it arrive. The wheels stay there until the next command. Replaces any motion.
+
+        reason: optional short note on what this is for; recorded, never executed.
+        """
+        result = await request(
+            "POST",
+            "/api/motion",
+            {
+                "direction": direction,
+                "steering_percent": steering_percent,
+                "speed_mps": 0,
+                "duration_s": max(STEER_IN_PLACE_S, DURATION_RANGE_S[0]),
+                "reason": reason,
+            },
+        )
+        return [text({key: result[key] for key in ("status", "error") if key in result})]
+
     async def stop_now(reason: Reason = "") -> list:
         """Cancel motion and begin braking. Observe to confirm standstill.
 
@@ -125,13 +155,15 @@ def make_server(client: httpx.AsyncClient, label="MCP"):
             f"Speed {SPEED_RANGE_MPS[0]}–{SPEED_RANGE_MPS[1]} m/s, typically {TYPICAL_SPEED_MPS}; "
             "above the operator's shared ceiling it is rejected. "
             f"Duration {DURATION_RANGE_S[0]:g}–{DURATION_RANGE_S[1]:g} s; aim for about "
-            f"{TYPICAL_DURATION_S:g} s and adjust to what you learn."
+            f"{TYPICAL_DURATION_S:g} s and adjust to what you learn. "
+            f"{DURATION_GUIDANCE.strip()}"
         )
     )
-    for function in (observe, set_motion, stop_now):
+    functions = (observe, set_motion, stop_now) + ((steer_in_place,) if STEER_IN_PLACE else ())
+    for function in functions:
         server.add_tool(
             function,
-            icons=icon(function.__name__),
+            icons=icon("set_motion" if function is steer_in_place else function.__name__),
             annotations=ToolAnnotations(
                 readOnlyHint=function is observe,
                 destructiveHint=function is not observe,

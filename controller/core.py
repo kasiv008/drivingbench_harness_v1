@@ -54,6 +54,10 @@ class Selection:
 
 
 class Controller:
+    # A zero-speed (steer in place) command is only safe where the command owner holds the
+    # brake for it. Owners that do, like the cart bridge, opt in.
+    allow_steer_in_place = False
+
     def __init__(self):
         self.boot_id = uuid.uuid4().hex
         self.command_epoch = 0
@@ -154,6 +158,8 @@ class Controller:
             angle = sign * motion.steering_percent / 100 * settings.max_steering_angle_deg
             if motion.speed_mps > settings.speed_limit_mps:
                 return self.reply(status="rejected", reason="speed_limit_exceeded")
+            if motion.speed_mps == 0 and not self.allow_steer_in_place:
+                return self.reply(status="rejected", reason="steer_in_place_unsupported")
             speed = motion.speed_mps
             self.command = dict(
                 request_id=request.request_id,

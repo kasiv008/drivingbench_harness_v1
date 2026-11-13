@@ -32,6 +32,8 @@ log = logging.getLogger("cart_bridge")
 
 
 class CartController(Controller):
+    allow_steer_in_place = True  # tick() sends an inactive target: brake held, wheels turn
+
     def motion_block(self, now, settings=None):
         reason = super().motion_block(now, settings)
         return RENAME.get(reason, reason)
@@ -39,6 +41,8 @@ class CartController(Controller):
     def status(self, now):
         result = super().status(now)
         result["reason"] = RENAME.get(result.get("reason"), result.get("reason"))
+        if self.command is not None and self.command["speed_mps"] == 0:
+            result["reason"] = "steering_in_place"
         return result
 
 
@@ -125,8 +129,11 @@ class Bridge:
             self.server.poll(self._reply)
             selection = c.step(self.clock())
             command = c.command
+            # A zero-speed command is steer-in-place: an inactive target makes the supervisor
+            # hold the brake while it still turns the wheels to angle_deg.
+            moving = command is not None and command["speed_mps"] > 0
             self._send({
-                "active": command is not None and not selection.should_stop,
+                "active": moving and not selection.should_stop,
                 "speed_mps": command["speed_mps"] if command else 0.0,
                 "angle_deg": selection.angle_deg,
                 "epoch": c.command_epoch,
