@@ -3,7 +3,7 @@
 // Passive camera/history reads never call MCP observe or take control.
 (() => {
   const { node, text, request } = window.DrivingBenchUI;
-  const cameras = Object.fromEntries(["narrow", "wide"].map((name) => [name, { pending: false, frame: null, error: "" }]));
+  const cameras = Object.fromEntries(["front", "left", "right", "rear"].map((name) => [name, { pending: false, frame: null, error: "" }]));
   const number = (value, unit) => Number.isFinite(value) ? `${value.toFixed(2)} ${unit}` : "Unknown";
   let historyPending = false;
   let historySignature = "";

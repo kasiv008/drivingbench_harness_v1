@@ -15,9 +15,10 @@ window.DrivingBenchTraces = (() => {
     for (const event of events) {
       if (event.kind === "tool") {
         calls.push({ t: at(event), ...event });
+        // One frame per observation: the first image, which is front whenever front was returned.
         for (const image of event.images || []) {
           const name = String(image.url || "").split("/").pop();
-          if (/^[0-9a-f]{32}\.jpg$/.test(name)) frames.push({ t: at(event), name, camera: image.camera || "camera" });
+          if (/^[0-9a-f]{32}\.jpg$/.test(name)) { frames.push({ t: at(event), name, camera: image.camera || "camera" }); break; }
         }
       } else if (event.kind === "telemetry") {
         telemetry.push({ t: at(event), speed: event.speed_mps, steering: event.steering_deg, command: event.command });

@@ -27,7 +27,7 @@ def write_segment(root, name, kinds, reason="Cone gap opens to the left; ease in
         if kind == "tool":
             extra.update(tool="set_motion", arguments={"reason": reason})
             if image:
-                extra["images"] = [{"url": f"/api/recordings/{image}", "camera": "narrow"}]
+                extra["images"] = [{"url": f"/api/recordings/{image}", "camera": "front"}]
         lines.append(event(kind, **extra))
     (folder / "events.jsonl").write_text("\n".join(lines) + "\n")
     (folder / "thumbs/aa.jpg").write_bytes(b"small")

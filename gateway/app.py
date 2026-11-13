@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
-from drivingbench.shared.contracts import PROTOCOL
+from drivingbench.shared.contracts import CAMERA_NAMES, PROTOCOL
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -147,7 +147,7 @@ def create_app(
     @app.api_route("/api/{path:path}", methods=["GET", "POST", "PATCH"])
     async def proxy(path: str, request: Request):
         allowed = {
-            "GET": {"status", "observe", "history", "camera/narrow", "camera/wide"},
+            "GET": {"status", "observe", "history", *(f"camera/{name}" for name in CAMERA_NAMES)},
             "POST": {"motion", "stop", "session/start", "session/end"},
             "PATCH": {"settings"},
         }

@@ -24,7 +24,7 @@ class Element {
 }
 const settings = {
   max_steering_angle_deg: 180, speed_limit_mps: 3.5,
-  road_camera_mode: "narrow_only", image_adjustments: { exposure_ev: 0, contrast: 1, saturation: 1 },
+  camera_mode: "all", image_adjustments: { exposure_ev: 0, contrast: 1, saturation: 1 },
   objective: "Turn left and stop", prompt: "saved prompt",
 };
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(setImmediate); };
@@ -32,14 +32,14 @@ const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(setImm
 async function browser() {
   const elements = Object.fromEntries([...fs.readFileSync(path.join(root, "index.html"), "utf8").matchAll(/id="([^"]+)"/g)]
     .map((match) => [match[1], new Element(match[1])]));
-  for (const name of ["drive-panel", "drive-narrow-image", "drive-wide-image"]) elements[name].hidden = true;
+  for (const name of ["drive-panel", "drive-front-image", "drive-left-image", "drive-right-image", "drive-rear-image"]) elements[name].hidden = true;
   const intervals = [], timeouts = [], requests = [], events = {}, revoked = [];
   let clock = 1000, sequence = 0;
   let status = { producer_id: "producer-one", state: "held", held: true, enabled: true, gear: "drive", brake_pressed: false,
     sensors_valid: true, speed_mps: 0, steering_deg: 17, settings: structuredClone(settings), settings_revision: 1 };
   let cameraFailure = false, decodeFailure = false, cameraWait = null, statusFailure = false;
   let recordingError = null;
-  let historyCalls = [{ id: "1", timestamp: "2026-09-16T06:11:03.307900+00:00", tool: "observe", client: "Claude", arguments: {}, outcome: { state: "held", speed_mps: 0, steering_percent: 0, remaining_s: 0, image_age_s: 0.31 }, images: [{ camera: "narrow", url: `/api/recordings/${"a".repeat(32)}.jpg` }, { url: "/api/arm" }] }];
+  let historyCalls = [{ id: "1", timestamp: "2026-09-16T06:11:03.307900+00:00", tool: "observe", client: "Claude", arguments: {}, outcome: { state: "held", speed_mps: 0, steering_percent: 0, remaining_s: 0, image_age_s: 0.31 }, images: [{ camera: "front", url: `/api/recordings/${"a".repeat(32)}.jpg` }, { url: "/api/arm" }] }];
   const response = (body, extra = {}) => ({ ok: true, json: async () => structuredClone(body), ...extra });
   const context = {
     console, CustomEvent: class { constructor(type, options) { this.type = type; Object.assign(this, options); } },
@@ -98,14 +98,14 @@ async function browser() {
   assert.equal(e["max_steering_angle_deg"].value, "180");
   assert.match(e["client-status"].children[0].textContent, /installed/);
   e.objective.value = "My unsaved objective"; await e.objective.fire("input");
-  b.status({ settings: { ...settings, objective: "Another laptop's objective", road_camera_mode: "wide_only" }, settings_revision: 2 });
+  b.status({ settings: { ...settings, objective: "Another laptop's objective", camera_mode: "front_only" }, settings_revision: 2 });
   await b.context.DrivingBenchUI.refresh();
   assert.equal(e.objective.value, "My unsaved objective");
-  assert.equal(e.road_camera_mode.value, "wide_only");
+  assert.equal(e.camera_mode.value, "front_only");
   assert.equal(e["generate-prompt"].disabled, true);
   await e["save-task"].fire("click");
   assert.deepEqual(JSON.parse(b.requests.findLast((r) => r.url === "/api/settings").body), { objective: "My unsaved objective" });
-  assert.equal(e.road_camera_mode.value, "wide_only");
+  assert.equal(e.camera_mode.value, "front_only");
 
   e.contrast.value = "1.4"; await e.contrast.fire("input");
   await e["save-settings"].fire("click");
@@ -124,23 +124,23 @@ async function browser() {
   assert.doesNotMatch(e.prompt.value, /curvature|course map|end_session|Drive:|Model client|Profile:|cadence|Model inputs/);
 
   await e["drive-tab"].fire("click"); await flush();
-  assert.equal(e["drive-narrow-image"].hidden, false);
-  const retained = e["drive-narrow-image"];
+  assert.equal(e["drive-front-image"].hidden, false);
+  const retained = e["drive-front-image"];
   b.failure(true); b.advance(5000); await b.tick(500);
-  assert.equal(e["drive-narrow-image"], retained);
-  assert.match(e["drive-narrow-status"].textContent, /5.3 s old.*stream missing/);
+  assert.equal(e["drive-front-image"], retained);
+  assert.match(e["drive-front-status"].textContent, /5.3 s old.*stream missing/);
   b.failure(false); b.decoding(true); await b.tick(500);
-  assert.equal(e["drive-narrow-image"], retained);
-  assert.match(e["drive-narrow-status"].textContent, /decode failed/);
+  assert.equal(e["drive-front-image"], retained);
+  assert.match(e["drive-front-status"].textContent, /decode failed/);
   b.decoding(false); await b.tick(500);
-  assert.match(e["drive-narrow-status"].textContent, /5.3 s old/); // same frame never becomes younger
+  assert.match(e["drive-front-status"].textContent, /5.3 s old/); // same frame never becomes younger
   assert.ok(b.revoked.length >= 2);
   await e["setup-tab"].fire("click"); await e["drive-tab"].fire("click"); await flush();
-  assert.equal(e["drive-narrow-image"].hidden, false);
+  assert.equal(e["drive-front-image"].hidden, false);
 
   b.disconnect(true); await b.context.DrivingBenchUI.refresh();
   assert.equal(e["drive-speed"].textContent, "Unknown");
-  assert.equal(e["drive-narrow-image"].hidden, false);
+  assert.equal(e["drive-front-image"].hidden, false);
   b.disconnect(false);
   let release;
   b.cameraWait(new Promise((resolve) => { release = resolve; }));
@@ -158,7 +158,7 @@ async function browser() {
   assert.equal(card.children[1].textContent, "held · 0 m/s · steering 0% · 0 s remaining"); // zero is "0", not blank; no reason paragraph
   assert.equal(card.children[2].textContent, "Images 0.3 s old");
   assert.equal(card.children.length, 5); // header, params, outcome, one valid image, raw toggle
-  assert.equal(card.children[3].alt, "Recorded narrow model observation");
+  assert.equal(card.children[3].alt, "Recorded front model observation");
   assert.equal(card.children[4].children[0].textContent, "Raw");
   assert.doesNotMatch(card.children[1].textContent + card.children[2].textContent, /[{}"]/);
   b.recordingError("disk full"); await b.tick(500);
@@ -220,7 +220,7 @@ async function browser() {
   assert.equal(e["exposure_ev-value"].textContent, "1");
   // Relative to the saved night preset (1.2 EV, 1.18x, 1.18x): the frame already carries those.
   assert.equal(e["adjust-preview-image"].style.filter, `brightness(${2 ** (1 - 1.2)}) contrast(1) saturate(1)`);
-  assert.ok(b.requests.some((r) => r.url === "/api/camera/narrow"));
+  assert.ok(b.requests.some((r) => r.url === "/api/camera/front"));
   const hide = b.timeouts.findLast((t) => t.ms === 10000); hide.fn();
   assert.equal(e["adjust-preview"].hidden, true);
   assert.equal(e["image-preset"].value, "custom"); // shown, not selectable
@@ -229,18 +229,18 @@ async function browser() {
   e.objective.value = "Keep this draft"; await e.objective.fire("input");
   b.cameraWait(new Promise((resolve) => { release = resolve; }));
   await b.tick(500);
-  const previousFrame = e["drive-narrow-image"];
+  const previousFrame = e["drive-front-image"];
   b.status({ producer_id: "producer-two", settings_revision: 0, settings: { ...settings, speed_limit_mps: 2 }, enabled: undefined, gear: undefined });
   await b.context.DrivingBenchUI.refresh();
   assert.equal(e.speed_limit_mps.value, "2");
   assert.equal(e.objective.value, "Keep this draft");
   assert.equal(e.engagement.textContent, "Unknown");
-  assert.match(e["drive-narrow-status"].textContent, /previous producer/);
+  assert.match(e["drive-front-status"].textContent, /previous producer/);
   release(); await flush();
-  assert.equal(e["drive-narrow-image"], previousFrame); // late old-source result is discarded
+  assert.equal(e["drive-front-image"], previousFrame); // late old-source result is discarded
   b.cameraWait(null); await b.tick(500);
-  assert.doesNotMatch(e["drive-narrow-status"].textContent, /previous producer/);
-  assert.match(e["drive-narrow-status"].textContent, /0.3 s old/);
+  assert.doesNotMatch(e["drive-front-status"].textContent, /previous producer/);
+  assert.match(e["drive-front-status"].textContent, /0.3 s old/);
   b.status({ settings_revision: 0, settings: { ...settings, speed_limit_mps: 2 }, state: "executing", command: { target_angle_deg: -180, speed_mps: 0.6 }, remaining_s: 3 });
   await b.context.DrivingBenchUI.refresh();
   assert.match(e["drive-command"].textContent, /-180.00 ° target.*0.60 m\/s target.*3.00 s remaining/);

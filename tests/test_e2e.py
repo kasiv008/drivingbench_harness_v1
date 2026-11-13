@@ -33,7 +33,7 @@ class MemoryCameras(Cameras):
     def start(self):
         output = io.BytesIO()
         Image.new("RGB", (16, 16), (90, 100, 110)).save(output, "JPEG")
-        for camera in ("narrow", "wide"):
+        for camera in ("front", "left", "right", "rear"):
             self.put(camera, Frame(camera, camera_clock(), output.getvalue()))
 
 
@@ -166,9 +166,12 @@ async def test_two_real_mcp_processes_share_native_commands_and_hot_settings(tmp
 
                 observed = await codex.call_tool("observe", {})
                 assert summary(observed)["state"] == "held"
-                assert (
-                    len([block for block in observed.content if block.type == "image"]) == 1
-                )  # narrow_only default
+                blocks = observed.content
+                assert [block.type for block in blocks] == ["text"] + ["text", "image"] * 4
+                labels = [block.text for block in blocks[1::2]]
+                for number, name in enumerate(("FRONT", "LEFT", "RIGHT", "REAR"), 1):
+                    assert labels[number - 1].startswith(f"Image {number} of 4: {name} camera")
+                assert summary(observed)["cameras"] == ["front", "left", "right", "rear"]
                 assert "data" not in summary(observed)
 
                 command = dict(direction="left", steering_percent=50, speed_mps=0.6, duration_s=5)

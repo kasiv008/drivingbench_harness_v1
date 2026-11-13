@@ -43,7 +43,7 @@ async def test_proxy_preserves_request_identity_and_camera_headers():
             sent = requests[-1]
             assert json.loads(sent.content)["request_id"] == "stable"
             assert sent.headers["x-client"] == "Codex"
-            image = await client.get("/api/camera/narrow")
+            image = await client.get("/api/camera/front")
             assert image.content == b"jpeg"
             assert image.headers["x-frame-id"] == "42"
             assert image.headers["cache-control"] == "no-store"
@@ -160,7 +160,7 @@ async def test_trace_viewer_routes_read_the_checkout_and_prefer_fetched_frames(t
             "kind": "tool",
             "tool": "observe",
             "timestamp": "2026-09-16T10:00:01+00:00",
-            "images": [{"url": f"/api/recordings/{name}", "camera": "narrow"}],
+            "images": [{"url": f"/api/recordings/{name}", "camera": "front"}],
         },
         {"kind": "telemetry", "timestamp": "2026-09-16T10:00:02+00:00", "speed_mps": 0.6},
         {"kind": "segment_end", "timestamp": "2026-09-16T10:00:09+00:00"},

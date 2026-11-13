@@ -1,4 +1,4 @@
-"""Comma HTTP producer: shared settings, images and RPC to the native motion owner."""
+"""Cart HTTP producer: shared settings, the four camera images and RPC to the motion owner."""
 
 import argparse
 import base64
@@ -17,6 +17,8 @@ from drivingbench.device.ipc import NativeClient
 from drivingbench.device.recording import Recorder
 from drivingbench.device.settings import SettingsStore, atomic_json
 from drivingbench.shared.contracts import (
+    CAMERA_MODES,
+    CAMERAS,
     NATIVE_WATCHDOG_S,
     PROTOCOL,
     REASON_MAX_CHARS,
@@ -110,6 +112,7 @@ def create_app(state_dir, *, native=None, cameras=None, release="0.1.0"):
             "segment": recording.segment,
             "session": recording.session,
             "camera_errors": dict(cameras.errors),
+            "cameras": [{"name": name, "description": text} for name, text in CAMERAS.items()],
         }
 
     @app.post("/session/start")
@@ -198,7 +201,7 @@ def create_app(state_dir, *, native=None, cameras=None, release="0.1.0"):
         return execute("stop", body, request.headers.get("X-Client", "operator")[:128])
 
     def frame_for(camera, adjustments):
-        if camera not in {"narrow", "wide"}:
+        if camera not in CAMERAS:
             raise HTTPException(404, "unknown_camera")
         return cameras.frame(camera, adjustments)
 
@@ -232,18 +235,17 @@ def create_app(state_dir, *, native=None, cameras=None, release="0.1.0"):
         result["timestamp"] = datetime.now(timezone.utc).isoformat()
         if state.get("reason"):
             result["reason"] = state["reason"]
-        selected = {
-            "narrow_only": ("narrow",),
-            "wide_only": ("wide",),
-            "narrow_and_wide": ("narrow", "wide"),
-        }[value.road_camera_mode]
-        images, history_images = [], []
+        selected = CAMERA_MODES[value.camera_mode]
+        images, history_images, missing = [], [], []
         for name in selected:
             frame = frame_for(name, value.image_adjustments)
-            if frame is not None:
+            if frame is None:
+                missing.append(name)
+            else:
                 images.append(
                     {
                         "camera": name,
+                        "description": CAMERAS[name],
                         "mime_type": "image/jpeg",
                         "data": base64.b64encode(frame.jpeg).decode(),
                         "age_s": max(0, camera_clock() - frame.captured_at),
@@ -253,7 +255,9 @@ def create_app(state_dir, *, native=None, cameras=None, release="0.1.0"):
                     {"url": "/api/recordings/" + recording.image(frame.jpeg), "camera": name}
                 )
         result["image_age_s"] = max((image["age_s"] for image in images), default=None)
-        if len(images) != len(selected):
+        result["cameras"] = [image["camera"] for image in images]
+        if missing:
+            result["cameras_unavailable"] = missing
             result["camera_reason"] = "camera_unavailable"
         elif images and result["image_age_s"] > CAMERA_STALE_S:
             result["camera_reason"] = "camera_stale"  # frames kept, just old

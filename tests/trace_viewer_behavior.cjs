@@ -11,10 +11,10 @@ const { timeline, latest, describe } = context.window.DrivingBenchTraces;
 const image = (i) => `/api/recordings/${String(i).repeat(32)}.jpg`;
 const events = [
   { kind: "segment_start", timestamp: "2026-09-16T10:00:00.000+00:00" },
-  { kind: "tool", tool: "observe", timestamp: "2026-09-16T10:00:01.500+00:00", images: [{ url: image(1), camera: "narrow" }, { url: "/api/arm" }] },
+  { kind: "tool", tool: "observe", timestamp: "2026-09-16T10:00:01.500+00:00", images: [{ url: image(1), camera: "front" }, { url: "/api/arm" }] },
   { kind: "telemetry", timestamp: "2026-09-16T10:00:02.000+00:00", speed_mps: 0.6, steering_deg: 12, command: { target_angle_deg: 90, speed_mps: 1 } },
   { kind: "tool", tool: "set_motion", timestamp: "2026-09-16T10:00:03.000+00:00", arguments: { direction: "left", steering_percent: 50, speed_mps: 1, duration_s: 10, reason: "go" }, outcome: { status: "accepted" } },
-  { kind: "tool", tool: "observe", timestamp: "2026-09-16T10:00:06.000+00:00", images: [{ url: image(2), camera: "narrow" }] },
+  { kind: "tool", tool: "observe", timestamp: "2026-09-16T10:00:06.000+00:00", images: [{ url: image(2), camera: "front" }] },
   { kind: "tool", tool: "stop_now", timestamp: "2026-09-16T10:00:08.000+00:00", arguments: {}, outcome: { status: "stopping" } },
   { kind: "segment_end", timestamp: "2026-09-16T10:00:10.000+00:00" },
 ];

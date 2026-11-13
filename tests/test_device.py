@@ -2,7 +2,6 @@ import base64
 import concurrent.futures
 import io
 import json
-import queue
 import socket
 import threading
 import time
@@ -11,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 from drivingbench.controller.core import Controller, Sample
-from drivingbench.device.cameras import Cameras, Frame, camera_clock, encode_nv12
+from drivingbench.device.cameras import Cameras, Frame, camera_clock
 from drivingbench.device.ipc import NativeClient, NativeServer
 from drivingbench.device.service import create_app
 from drivingbench.device.settings import SettingsStore
@@ -67,7 +66,7 @@ def jpeg():
 @pytest.fixture
 def producer(tmp_path):
     native, cameras = LocalNative(), MemoryCameras()
-    cameras.put("narrow", Frame("one", camera_clock(), jpeg()))
+    cameras.put("front", Frame("one", camera_clock(), jpeg()))
     app = create_app(tmp_path, native=native, cameras=cameras)
     with TestClient(app) as client:
         yield client, app, native, cameras
@@ -86,7 +85,7 @@ def test_motion_stop_and_next_command_without_camera(producer):
 
 def test_settings_patch_and_frame_bytes_shared_by_observe_and_ui(producer):
     client, _, _, _ = producer
-    original = client.get("/camera/narrow").content
+    original = client.get("/camera/front").content
     client.patch("/settings", json={"image_adjustments": {"exposure_ev": 1.2}})
     client.patch(
         "/settings", json={"objective": "turn left", "image_adjustments": {"contrast": 1.18}}
@@ -94,7 +93,7 @@ def test_settings_patch_and_frame_bytes_shared_by_observe_and_ui(producer):
     current = client.get("/status").json()["settings"]
     assert current["objective"] == "turn left"
     assert current["image_adjustments"] == {"exposure_ev": 1.2, "contrast": 1.18, "saturation": 1}
-    image = client.get("/camera/narrow")
+    image = client.get("/camera/front")
     observation = client.get("/observe").json()
     assert image.content != original
     assert base64.b64decode(observation["images"][0]["data"]) == image.content
@@ -122,43 +121,14 @@ def test_hot_setting_snapshots_and_duplicate_no_new_deadline(producer):
     assert native.controller.command["target_angle_deg"] == -360
 
 
-def test_dead_camera_worker_is_respawned_with_capped_backoff(monkeypatch):
-    from drivingbench.device import cameras as module
-    from drivingbench.device.cameras import Worker
-
-    class Dead:
-        def is_alive(self):
-            return False
-
-    now = [1000.0]
-    monkeypatch.setattr(module, "camera_clock", lambda: now[0])
-    cameras = Cameras()
-    spawned = []
-    cameras._spawn = lambda name, out: spawned.append((name, now[0])) or Dead()
-    cameras.workers["narrow"] = Worker(queue.Queue(), Dead())
-    adjustments = Settings().image_adjustments
-    for _ in range(3):
-        cameras.frame("narrow", adjustments)
-    assert len(spawned) == 1 and cameras.errors == {"narrow": "camera_worker_exited"}
-    for _ in range(400):
-        now[0] += 0.5
-        cameras.frame("narrow", adjustments)
-    times = [t for _, t in spawned]
-    gaps = [round(b - a, 1) for a, b in zip(times, times[1:])]
-    assert gaps[:5] == [2.0, 4.0, 8.0, 16.0, 30.0] and set(gaps[5:]) == {30.0}
-    cameras.workers["narrow"].out.put(Frame("fresh", now[0], jpeg()))
-    cameras.frame("narrow", adjustments)
-    assert cameras.errors == {}  # a frame from the respawned worker clears the error
-
-
 def test_observe_names_stale_frames_but_still_returns_them(producer):
     client, _, _, cameras = producer
-    client.patch("/settings", json={"road_camera_mode": "narrow_only"})
-    cameras.put("narrow", Frame("old", camera_clock() - 10, jpeg()))
+    client.patch("/settings", json={"camera_mode": "front_only"})
+    cameras.put("front", Frame("old", camera_clock() - 10, jpeg()))
     packet = client.get("/observe").json()
     assert packet["reason"] == "camera_stale" and len(packet["images"]) == 1
     assert packet["image_age_s"] >= 10
-    cameras.put("narrow", Frame("new", camera_clock(), jpeg()))
+    cameras.put("front", Frame("new", camera_clock(), jpeg()))
     assert "reason" not in client.get("/observe").json()
 
 
@@ -419,13 +389,13 @@ def test_producer_segments_follow_native_engagement(producer):
 def test_native_offline_keeps_observe_and_settings_but_refuses_motion(tmp_path):
     """No socket owner at all: the producer stays inspectable, nothing can start motion."""
     cameras = MemoryCameras()
-    cameras.put("narrow", Frame("one", camera_clock(), jpeg()))
-    cameras.errors["wide"] = "worker exited"
+    cameras.put("front", Frame("one", camera_clock(), jpeg()))
+    cameras.errors["rear"] = "worker exited"
     native = NativeClient(tmp_path / "missing.sock", timeout=0.2)
     with TestClient(create_app(tmp_path, native=native, cameras=cameras)) as client:
         status = client.get("/status").json()
         assert status["state"] == "unavailable" and status["reason"] == "native_offline"
-        assert status["camera_errors"] == {"wide": "worker exited"}
+        assert status["camera_errors"] == {"rear": "worker exited"}
         observation = client.get("/observe").json()
         assert observation["state"] == "unavailable" and observation["reason"] == "native_offline"
         assert len(observation["images"]) == 1
@@ -541,24 +511,6 @@ def test_native_socket_roundtrip_duplicate_owner_and_recovery(tmp_path):
         replacement.close()
 
 
-def test_nv12_padding_conversion_and_bad_layout():
-    from types import SimpleNamespace
-
-    buffer = SimpleNamespace(
-        width=2,
-        height=2,
-        stride=4,
-        uv_offset=8,
-        data=bytes([80, 80, 0, 0, 80, 80, 0, 0, 128, 128, 0, 0]),
-    )
-    with Image.open(io.BytesIO(encode_nv12(buffer))) as image:
-        assert image.size == (2, 2)
-        assert all(abs(channel - 80) <= 2 for channel in image.getpixel((0, 0)))
-    buffer.data = b"bad"
-    with pytest.raises(ValueError, match="truncated"):
-        encode_nv12(buffer)
-
-
 def test_saved_settings_reload_with_their_revision_and_reject_unknown_fields(tmp_path):
     from drivingbench.shared.contracts import Settings
 
@@ -576,10 +528,73 @@ def test_saved_settings_reload_with_their_revision_and_reject_unknown_fields(tmp
 def test_camera_health_is_visible_alongside_native_reason(producer):
     client, _, native, cameras = producer
     native.controller.reason = "gear_not_drive"
-    cameras.put("narrow", Frame("old", camera_clock() - 10, jpeg()))
-    client.patch("/settings", json={"road_camera_mode": "narrow_only"})
+    cameras.put("front", Frame("old", camera_clock() - 10, jpeg()))
+    client.patch("/settings", json={"camera_mode": "front_only"})
     packet = client.get("/observe").json()
     assert packet["reason"] == "gear_not_drive"
     assert packet["camera_reason"] == "camera_stale"
     cameras.frames.clear()
     assert client.get("/observe").json()["camera_reason"] == "camera_unavailable"
+
+
+def test_observe_returns_all_four_cameras_in_order_with_descriptions(producer):
+    from drivingbench.shared.contracts import CAMERAS
+
+    client, _, _, cameras = producer
+    for name in ("rear", "right", "left", "front"):  # arrival order must not matter
+        cameras.put(name, Frame(name, camera_clock(), jpeg()))
+    packet = client.get("/observe").json()
+    assert [image["camera"] for image in packet["images"]] == ["front", "left", "right", "rear"]
+    assert packet["cameras"] == ["front", "left", "right", "rear"]
+    assert all(image["description"] == CAMERAS[image["camera"]] for image in packet["images"])
+    assert "camera_reason" not in packet and "cameras_unavailable" not in packet
+    status = client.get("/status").json()
+    assert [camera["name"] for camera in status["cameras"]] == list(CAMERAS)
+    for name in CAMERAS:
+        assert client.get(f"/camera/{name}").status_code == 200
+    assert client.get("/camera/narrow").status_code == 404
+
+
+def test_missing_camera_is_named_and_the_others_still_return(producer):
+    client, _, _, cameras = producer
+    cameras.frames.clear()
+    for name in ("front", "left", "right"):
+        cameras.put(name, Frame(name, camera_clock(), jpeg()))
+    packet = client.get("/observe").json()
+    assert packet["cameras"] == ["front", "left", "right"]
+    assert packet["cameras_unavailable"] == ["rear"]
+    assert packet["camera_reason"] == "camera_unavailable"
+    client.patch("/settings", json={"camera_mode": "front_and_sides"})
+    packet = client.get("/observe").json()
+    assert packet["cameras"] == ["front", "left", "right"] and "camera_reason" not in packet
+
+
+def test_legacy_comma_camera_setting_is_dropped_on_load(tmp_path):
+    path = tmp_path / "settings.json"
+    settings = Settings().model_dump()
+    del settings["camera_mode"]
+    settings["road_camera_mode"] = "narrow_only"
+    path.write_text(json.dumps({"settings": settings, "revision": 3}))
+    value, revision = SettingsStore(path).snapshot()
+    assert value.camera_mode == "all" and revision == 3
+
+
+def test_usb_cameras_stream_all_four_synthetic_devices():
+    pytest.importorskip("cv2")
+    cameras = Cameras({name: "test" for name in ("rear", "front", "left", "right")},
+                      width=320, height=180, fps=60, out_width=160, encode_hz=20)
+    assert list(cameras.devices) == ["front", "left", "right", "rear"]  # priority order
+    cameras.start()
+    try:
+        deadline = time.monotonic() + 5
+        while len(cameras.frames) < 4 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert set(cameras.frames) == {"front", "left", "right", "rear"}
+        frame = cameras.frame("left", Settings().image_adjustments)
+        with Image.open(io.BytesIO(frame.jpeg)) as image:
+            assert image.size == (160, 90)
+        assert frame.key.startswith("left-")
+    finally:
+        cameras.close()
+    with pytest.raises(ValueError, match="unknown cameras"):
+        Cameras({"narrow": "test"})

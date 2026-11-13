@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # Start the harness side on the cart PC: bridge, producer, gateway. Ctrl+C stops all three.
 # ROS side (separately): ros2 launch golfcart_joystick_demo llm_drive.launch.xml
-# Usage: cart/run_harness.sh [camera]   camera: /dev/cam_front (default), a device path, an index, or "test"
+# Usage: cart/run_harness.sh [producer args]
+#   Cameras: front, left, right, rear from /dev/cam_<name> (udev, cart_ws 99-cart-cameras.rules).
+#   cart/run_harness.sh --test-cameras            synthetic images, no hardware
+#   cart/run_harness.sh --camera rear=off         run without one camera
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # The harness has its own Python environment: keep ROS 2 packages off its path.
 unset PYTHONPATH
-CAMERA="${1:-/dev/cam_front}"
 
 uv run python cart/cart_bridge.py &
 BRIDGE=$!
 sleep 1
-uv run python cart/producer.py --camera "$CAMERA" &
+uv run python cart/producer.py "$@" &
 PRODUCER=$!
 sleep 2
 uv run python cart/gateway.py &

@@ -33,6 +33,8 @@ class SettingsStore:
         self.revision = 0
         if self.path.exists():
             saved = json.loads(self.path.read_text())
+            # Pre-cart files carry the comma narrow/wide selection; the cart default replaces it.
+            saved["settings"].pop("road_camera_mode", None)
             self.value = Settings.model_validate(saved["settings"])
             self.revision = saved["revision"]
 

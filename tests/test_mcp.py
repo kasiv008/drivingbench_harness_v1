@@ -6,6 +6,7 @@ import httpx
 import pytest
 from drivingbench.mcp.tools import make_server
 from drivingbench.shared.contracts import (
+    CAMERAS,
     DURATION_RANGE_S,
     SPEED_RANGE_MPS,
     TYPICAL_DURATION_S,
@@ -104,7 +105,7 @@ async def test_images_are_separate_and_writes_are_small(motion):
                     "internal_noise": "hidden",
                     "images": [
                         {
-                            "camera": "narrow",
+                            "camera": "front",
                             "mime_type": "image/jpeg",
                             "data": "YWJj",
                             "age_s": 0.2,
@@ -119,11 +120,12 @@ async def test_images_are_separate_and_writes_are_small(motion):
     ) as client:
         server = make_server(client, "Claude")
         observation = await server.call_tool("observe", {})
-        assert len(observation) == 2
-        assert observation[1].type == "image"
+        assert [block.type for block in observation] == ["text", "text", "image"]
+        assert observation[1].text.startswith("Image 1 of 1: FRONT camera, 0.20 s old. ")
+        assert CAMERAS["front"] in observation[1].text
         assert "YWJj" not in observation[0].text
         assert "internal_noise" not in observation[0].text
-        assert result_text(observation)["cameras"] == ["narrow"]
+        assert result_text(observation)["cameras"] == ["front"]
         assert result_text(observation)["steering_percent"] == 6.2
         first = await server.call_tool("set_motion", motion)
         assert len(first) == 1
@@ -241,3 +243,28 @@ async def test_steer_in_place_is_an_opt_in_zero_speed_motion(monkeypatch):
         await server.call_tool("steer_in_place", {"direction": "left", "steering_percent": 100})
     assert requests[0]["speed_mps"] == 0 and requests[0]["steering_percent"] == 100
     assert requests[0]["duration_s"] >= DURATION_RANGE_S[0]
+
+
+async def test_observe_labels_every_camera_before_its_image_and_drops_unknown_ones():
+    def handle(request):
+        images = [
+            {"camera": name, "mime_type": "image/jpeg", "data": "YWJj", "age_s": 0.1}
+            for name in ("front", "left", "right", "rear", "narrow")
+        ]
+        return httpx.Response(
+            200,
+            json={"state": "held", "images": images, "cameras_unavailable": [],
+                  "image_age_s": 0.1},
+        )
+
+    async with httpx.AsyncClient(
+        base_url="http://127.0.0.1", transport=httpx.MockTransport(handle)
+    ) as client:
+        observation = await make_server(client).call_tool("observe", {})
+    assert [block.type for block in observation] == ["text"] + ["text", "image"] * 4
+    for number, name in enumerate(("front", "left", "right", "rear"), 1):
+        label = observation[2 * number - 1].text
+        assert label.startswith(f"Image {number} of 4: {name.upper()} camera")
+        assert label.endswith(CAMERAS[name])
+    assert result_text(observation)["cameras"] == ["front", "left", "right", "rear"]
+    assert "cart's RIGHT side" in CAMERAS["rear"]  # rear is not mirrored

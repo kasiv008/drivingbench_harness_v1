@@ -104,7 +104,7 @@ def main():
     time.sleep(1.0)
     procs.append(subprocess.Popen([py, str(CART / "producer.py"), "--state-dir", str(tmp / "state"),
                                    "--native-socket", str(sock), "--port", str(PORTS["producer"]),
-                                   "--camera", "test", "--width", "1920", "--height", "1080"],
+                                   "--test-cameras", "--width", "1920", "--height", "1080"],
                                   env=env))
     procs.append(subprocess.Popen([py, str(CART / "gateway.py"), "--producer-url",
                                    f"http://127.0.0.1:{PORTS['producer']}",
@@ -121,11 +121,12 @@ def main():
                  10, "native status through gateway")
         check(True, "gateway -> producer -> bridge status: " + status()["state"])
 
-        obs = wait_for(lambda: (o := api.get("/api/observe").json()).get("images") and o, 10,
-                       "camera frame")
-        img = obs["images"][0]
-        check(img["camera"] == "narrow" and len(img["data"]) > 1000,
-              f"observe returns a JPEG ({len(img['data'])} b64 chars, age {img['age_s']:.2f}s)")
+        obs = wait_for(lambda: len((o := api.get("/api/observe").json()).get("images", [])) == 4
+                       and o, 10, "four camera frames")
+        names = [img["camera"] for img in obs["images"]]
+        check(names == ["front", "left", "right", "rear"], f"observe returns four cameras {names}")
+        check(all(len(img["data"]) > 1000 and img["description"] for img in obs["images"]),
+              "each camera has a JPEG and a description")
         check(obs["state"] == "held", "observe reports held at standstill")
 
         r = api.post("/api/motion", json={"direction": "left", "steering_percent": 50,
@@ -133,8 +134,9 @@ def main():
         check(r.get("status") == "accepted", f"motion accepted: {r}")
         t = wait_for(lambda: fake.target if fake.target and fake.target["active"] else None, 2,
                      "active target")
-        check(t["speed_mps"] == 1.0 and t["angle_deg"] == 150.0,
-              f"target speed 1.0, angle +150 deg (left, 50% of 300): {t}")
+        scale = json.loads((CART / "cart_settings.json").read_text())["max_steering_angle_deg"]
+        check(t["speed_mps"] == 1.0 and t["angle_deg"] == scale / 2,
+              f"target speed 1.0, angle +{scale / 2:g} deg (left, 50% of {scale:g}): {t}")
 
         r = api.post("/api/motion", json={"direction": "left", "steering_percent": 10,
                                          "speed_mps": 3.0, "duration_s": 5}).json()
@@ -165,6 +167,7 @@ def main():
                                          "speed_mps": 1.0, "duration_s": 5}).json()
         check(r.get("error") == "operator_brake", f"operator brake rejects motion: {r}")
         fake.state.update(brake_pressed=False)
+        time.sleep(0.2)  # let the bridge see the release before the next command
 
         api.post("/api/motion", json={"direction": "straight", "steering_percent": 0,
                                      "speed_mps": 1.0, "duration_s": 5})
@@ -184,10 +187,15 @@ def main():
 
         instructions, tools, observed, moved, stopped = asyncio.run(
             mcp_session(f"http://127.0.0.1:{PORTS['gateway']}"))
-        check(tools == ["observe", "set_motion", "stop_now"], f"MCP tools: {tools}")
+        check(tools == ["observe", "set_motion", "steer_in_place", "stop_now"], f"MCP tools: {tools}")
         check("golf cart" in instructions, "MCP serves cart instructions")
         kinds = [c.type for c in observed.content]
-        check(kinds[0] == "text" and "image" in kinds, f"MCP observe returns text+image {kinds}")
+        check(kinds == ["text"] + ["text", "image"] * 4, f"MCP observe: summary + 4 labelled images {kinds}")
+        labels = [block.text.split(",")[0] for block in observed.content[1::2]]
+        check(labels == [f"Image {i} of 4: {name} camera" for i, name in
+                         enumerate(("FRONT", "LEFT", "RIGHT", "REAR"), 1)], f"MCP labels: {labels}")
+        check("rear:" in instructions and "four wide-angle cameras" in instructions.lower(),
+              "MCP instructions describe the camera rig")
         check('"accepted"' in moved.content[0].text, f"MCP set_motion: {moved.content[0].text}")
         check('"stopping"' in stopped.content[0].text, f"MCP stop_now: {stopped.content[0].text}")
         print("ALL PASSED")

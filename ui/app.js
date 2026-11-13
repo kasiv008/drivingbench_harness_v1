@@ -6,7 +6,7 @@ window.DrivingBenchUI = (() => {
   const text = (value) => String(value ?? "Unknown").replaceAll("_", " ");
   const imageKeys = ["exposure_ev", "contrast", "saturation"];
   const taskKeys = ["objective", "prompt"];
-  const settingKeys = ["road_camera_mode", ...imageKeys, "max_steering_angle_deg", "speed_limit_mps"];
+  const settingKeys = ["camera_mode", ...imageKeys, "max_steering_angle_deg", "speed_limit_mps"];
   const dirty = new Set();
   const pending = new Set();
   let snapshot = null;
@@ -55,7 +55,7 @@ window.DrivingBenchUI = (() => {
   function readouts() {
     for (const key of imageKeys) node(`${key}-value`).textContent = node(key).value;
   }
-  // Image-adjustment preview: the last narrow frame (already carrying the saved adjustments)
+  // Image-adjustment preview: the last front frame (already carrying the saved adjustments)
   // with the difference to the slider values applied as CSS filters. Hides after 10 s idle.
   let previewTimer = null;
   let previewUrl = null;
@@ -70,13 +70,13 @@ window.DrivingBenchUI = (() => {
     if (figure.hidden) {
       figure.hidden = false;
       try {
-        const response = await fetch("/api/camera/narrow", { cache: "no-store" });
+        const response = await fetch("/api/camera/front", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const url = URL.createObjectURL(await response.blob());
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         previewUrl = url;
         image.src = url;
-      } catch (_) { node("adjust-preview").querySelector("figcaption").textContent = "No narrow frame available to preview yet."; }
+      } catch (_) { node("adjust-preview").querySelector("figcaption").textContent = "No front frame available to preview yet."; }
     }
   }
   function renderSettings(settings, nextRevision) {
@@ -165,7 +165,7 @@ window.DrivingBenchUI = (() => {
     const values = Object.fromEntries(keys.filter((key) => dirty.has(key)).map((key) => [key, node(key).value]));
     const patch = {};
     for (const [key, value] of Object.entries(values)) {
-      const number = !["road_camera_mode", ...taskKeys].includes(key);
+      const number = !["camera_mode", ...taskKeys].includes(key);
       if (number && (!value.trim() || !Number.isFinite(Number(value)) || !node(key).checkValidity())) {
         result(`Enter a valid ${text(key)}.`, "error");
         return;

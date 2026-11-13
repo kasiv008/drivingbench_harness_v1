@@ -1,10 +1,33 @@
+# Python
 .venv/
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.ruff_cache/
 *.egg-info/
 build/
 dist/
+
+# Tool caches and coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Node (UI checks)
+node_modules/
+
+# Local runtime output (device recordings mirror, logs)
 runs/
+*.log
+
+# Secrets
+.env
+.env.*
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
 .DS_Store

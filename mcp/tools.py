@@ -11,6 +11,7 @@ from uuid import uuid4
 import httpx
 from drivingbench.mcp.icons import icon
 from drivingbench.shared.contracts import (
+    CAMERAS,
     DURATION_GUIDANCE,
     DURATION_RANGE_S,
     INSTRUCTIONS,
@@ -65,7 +66,11 @@ def make_server(client: httpx.AsyncClient, label="MCP"):
             return {"error": "observation_unavailable" if method == "GET" else "outcome_unknown"}
 
     async def observe() -> list:
-        """See road images, actual speed/steering, and command state. Motion continues as you think."""
+        """See the cart cameras, actual speed/steering, and command state. Motion continues as you think.
+
+        Returns a JSON summary, then for each camera (order front, left, right, rear) a text
+        label naming the camera and its view, followed by that camera's image.
+        """
         packet = await request("GET", "/api/observe")
         summary = {
             key: packet[key]
@@ -76,19 +81,35 @@ def make_server(client: httpx.AsyncClient, label="MCP"):
                 "steering_percent",
                 "remaining_s",
                 "image_age_s",
+                "cameras",
+                "cameras_unavailable",
                 "camera_reason",
                 "reason",
                 "error",
             )
             if key in packet
         }
-        images = packet.get("images", [])
-        if images:
-            summary["cameras"] = [image["camera"] for image in images]
-        return [text(summary)] + [
-            ImageContent(type="image", data=image["data"], mimeType=image["mime_type"])
-            for image in images
+        images = [
+            image for image in packet.get("images", [])
+            if isinstance(image, dict) and image.get("camera") in CAMERAS
         ]
+        summary["cameras"] = [image["camera"] for image in images]
+        content = [text(summary)]
+        for number, image in enumerate(images, 1):
+            name = image["camera"]
+            age = image.get("age_s")
+            content.append(
+                TextContent(
+                    type="text",
+                    text=f"Image {number} of {len(images)}: {name.upper()} camera"
+                    + (f", {age:.2f} s old" if isinstance(age, (int, float)) else "")
+                    + f". {CAMERAS[name]}",
+                )
+            )
+            content.append(
+                ImageContent(type="image", data=image["data"], mimeType=image["mime_type"])
+            )
+        return content
 
     async def set_motion(
         direction: Literal["left", "right", "straight"],

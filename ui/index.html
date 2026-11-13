@@ -52,7 +52,7 @@
           <h2 id="inputs-title">3. Choose shared settings</h2>
           <p id="settings-revision" class="quiet">Waiting for saved settings.</p>
           <div class="input-grid">
-            <label>Model cameras<select id="road_camera_mode" disabled><option value="narrow_only">Narrow only</option><option value="narrow_and_wide">Narrow + wide</option><option value="wide_only">Wide only</option></select></label>
+            <label>Model cameras<select id="camera_mode" disabled><option value="all">All four · front, left, right, rear</option><option value="front_and_sides">Front + left + right</option><option value="front_only">Front only</option></select></label>
             <label>Image preset<select id="image-preset" disabled><option value="neutral">Default · neutral</option><option value="night">Night</option><option value="custom" disabled>Custom values</option></select></label>
           </div>
           <div class="input-grid sliders">
@@ -61,8 +61,8 @@
             <label><span>Saturation <output id="saturation-value">1</output>×</span><input id="saturation" type="range" min="0" max="2" step="0.01" disabled /></label>
           </div>
           <figure id="adjust-preview" class="adjust-preview" hidden>
-            <img id="adjust-preview-image" alt="Last narrow camera frame with the adjustments you are choosing" />
-            <figcaption class="quiet">Preview of the last narrow frame with these adjustments; hides after 10 s of no slider movement.</figcaption>
+            <img id="adjust-preview-image" alt="Last front camera frame with the adjustments you are choosing" />
+            <figcaption class="quiet">Preview of the last front frame with these adjustments; hides after 10 s of no slider movement.</figcaption>
           </figure>
           <div class="input-grid">
             <label>Steering scale (steering-wheel degrees at 100%)<input id="max_steering_angle_deg" type="number" min="0.1" step="any" disabled /></label>
@@ -125,10 +125,12 @@
         <section class="card" aria-labelledby="live-title">
           <h2 id="live-title">Live operator view</h2>
           <p id="drive-notice" class="quiet">Waiting for vehicle telemetry.</p>
-          <p class="quiet">Both cameras use the saved image adjustments. The model camera selection only controls which cameras observe returns.</p>
+          <p class="quiet">All four cameras use the saved image adjustments. The model camera selection only controls which cameras observe returns. The rear image is not mirrored: its left side is the cart's right.</p>
           <div class="camera-grid">
-            <article><h3>Narrow camera</h3><p id="drive-narrow-status">Waiting for an image.</p><img id="drive-narrow-image" alt="Narrow camera" hidden /></article>
-            <article><h3>Wide camera</h3><p id="drive-wide-status">Waiting for an image.</p><img id="drive-wide-image" alt="Wide camera" hidden /></article>
+            <article><h3>Front camera</h3><p id="drive-front-status">Waiting for an image.</p><img id="drive-front-image" alt="Front camera" hidden /></article>
+            <article><h3>Rear camera</h3><p id="drive-rear-status">Waiting for an image.</p><img id="drive-rear-image" alt="Rear camera" hidden /></article>
+            <article><h3>Left camera</h3><p id="drive-left-status">Waiting for an image.</p><img id="drive-left-image" alt="Left camera" hidden /></article>
+            <article><h3>Right camera</h3><p id="drive-right-status">Waiting for an image.</p><img id="drive-right-image" alt="Right camera" hidden /></article>
           </div>
           <dl class="drive-measurements">
             <div><dt>Speed</dt><dd id="drive-speed">Unknown</dd></div>

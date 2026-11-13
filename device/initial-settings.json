@@ -2,7 +2,7 @@
   "settings": {
     "max_steering_angle_deg": 180,
     "speed_limit_mps": 3.0,
-    "road_camera_mode": "narrow_only",
+    "camera_mode": "all",
     "image_adjustments": {"exposure_ev": 0, "contrast": 1, "saturation": 1},
     "speed_control": {
       "gain": 0.5,
